@@ -48,32 +48,32 @@ export function rollGems(pool, tier, value, count, random = Math.random) {
   return [...stock.values()];
 }
 
-export function rollArmory(pool, tier, counts, rarity, labels, random = Math.random) {
+const MUNDANE_STOCK = { simple: 3, martial: 5 };
+
+export function rollArmory(pool, tier, categories, rarity, labels, random = Math.random) {
   const allowed = raritiesForTier(tier);
   const limit = WEAPON_RARITIES.indexOf(rarity);
-  if (!allowed.includes(rarity) || Object.values(counts).some(count => !Number.isInteger(count) || count < 0 || count > 30)) {
-    throw new Error("Укажите от 0 до 30 позиций каждого вида и выберите предел редкости.");
+  if (!allowed.length || (categories.includes("magic") && !allowed.includes(rarity))) {
+    throw new Error("Выберите тир и подходящий предел редкости.");
   }
-  if (!Object.values(counts).some(Boolean)) throw new Error("Добавьте хотя бы одну позицию оружия.");
+  if (!categories.length) throw new Error("Отметьте хотя бы один тип оружия.");
   const weights = new Map(allowed.filter(rarity => WEAPON_RARITIES.indexOf(rarity) <= limit).map(rarity =>
     [rarity, RARITY_WEIGHTS[tier - 1][WEAPON_RARITIES.indexOf(rarity)]]));
 
-  return Object.entries(counts).flatMap(([category, count]) => {
+  return categories.flatMap(category => {
     const available = pool.filter(entry => entry.category === category &&
       (category !== "magic" || weights.has(entry.rarity)));
-    if (available.length < count) throw new Error(`${labels[category]}: доступно позиций — ${available.length}, запрошено — ${count}.`);
-    if (category !== "magic") return Array.from({ length: count }, () => ({
+    if (!available.length) throw new Error(`${labels[category]}: подходящих позиций в компендиуме нет.`);
+    if (category !== "magic") return Array.from({ length: Math.min(MUNDANE_STOCK[category], available.length) }, () => ({
       ...available.splice(Math.floor(random() * available.length), 1)[0], quantity: 1
     }));
 
     const groups = Map.groupBy(available, entry => entry.rarity);
-    return Array.from({ length: count }, () => {
-      const remaining = [...weights].filter(([rarity]) => groups.get(rarity)?.length);
-      let roll = random() * remaining.reduce((sum, [, weight]) => sum + weight, 0);
-      const [rarity] = remaining.find(([, weight]) => (roll -= weight) < 0);
-      const group = groups.get(rarity);
-      return { ...group.splice(Math.floor(random() * group.length), 1)[0], quantity: 1 };
-    });
+    const remaining = [...weights].filter(([rarity]) => groups.has(rarity));
+    let roll = random() * remaining.reduce((sum, [, weight]) => sum + weight, 0);
+    const [rarity] = remaining.find(([, weight]) => (roll -= weight) < 0);
+    const group = groups.get(rarity);
+    return [{ ...group[Math.floor(random() * group.length)], quantity: 1 }];
   });
 }
 

@@ -38,9 +38,10 @@ assert.equal(weaponCategory({ type: { value: "simpleR" }, properties: [] }), "si
 assert.equal(weaponCategory({ type: { value: "simpleM", baseItem: "dagger" }, rarity: "rare" }), "magic");
 assert.equal(weaponCategory({ type: { value: "martialM" }, rarity: "rare" }), undefined);
 assert.deepEqual([1, 2, 3, 4].map(defaultRarityForTier), ["uncommon", "uncommon", "rare", "rare"]);
-const armory = rollArmory(weapons, 4, { simple: 1, martial: 0, magic: 3 }, "legendary", labels, () => 0);
-assert.deepEqual(armory.map(weapon => weapon.uuid), ["dagger", "rare", "veryRare", "legendary"]);
-assert.equal(rollArmory(weapons, 1, { magic: 1 }, "rare", labels, () => 0.53)[0].rarity, "common");
-assert.equal(rollArmory(weapons, 1, { magic: 1 }, "rare", labels, () => 0.54)[0].rarity, "uncommon");
-assert.throws(() => rollArmory(weapons, 1, { magic: 3 }, "uncommon", labels), /доступно позиций — 2/);
-assert.throws(() => rollArmory(weapons, 1, { simple: 0, martial: 0, magic: 0 }, "rare", labels), /хотя бы одну/);
+const armory = rollArmory(weapons, 4, ["simple", "magic"], "legendary", labels, () => 0);
+assert.deepEqual(armory.map(weapon => weapon.uuid), ["dagger", "rare"]);
+assert.equal(rollArmory(weapons, 1, ["magic"], "rare", labels, () => 0.53)[0].rarity, "common");
+assert.equal(rollArmory(weapons, 1, ["magic"], "rare", labels, () => 0.54)[0].rarity, "uncommon");
+assert.throws(() => rollArmory(weapons, 4, ["magic"], "uncommon", labels), /предел редкости/);
+assert.throws(() => rollArmory([], 1, ["magic"], "rare", labels), /подходящих позиций/);
+assert.throws(() => rollArmory(weapons, 1, [], "rare", labels), /хотя бы один/);

@@ -4,7 +4,6 @@ import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
 const WEAPONS = { simple: "Простое оружие", martial: "Воинское оружие", magic: "Магическое оружие" };
-const DEFAULT_COUNTS = { simple: 3, martial: 5, magic: 0 };
 const STOCK_PACKS = ["ag-fifthpendium.equipment", "fifthpendium.items"];
 const INDEX_FIELDS = ["system.identifier", "system.type.value", "system.type.baseItem", "system.price.value",
   "system.price.denomination", "system.properties", "system.rarity", "system.source.rules", "system.source.book"];
@@ -58,15 +57,17 @@ export function openGems() {
 export function openArmory() {
   return openStock({
     kind: "armory", title: "Ассортимент оружейной", subtitle: "Оружие из Книги игрока и Руководства Мастера 2024", icon: "fa-swords",
-    fields: `${Object.entries(WEAPONS).map(([name, label]) => numberField(name, label, 0, 30, DEFAULT_COUNTS[name])).join("")}
-      <label>Максимальная редкость магического оружия<select name="rarity"></select></label>
-      <p class="mjl-book-copy">Укажите 0, чтобы убрать категорию из ассортимента.</p>`,
+    fields: `<fieldset class="mjl-book-sources"><legend>Типы оружия</legend>
+      ${Object.entries(WEAPONS).map(([name, label]) =>
+        `<label><input type="checkbox" name="${name}" ${name === "magic" ? "" : "checked"}>${label}</label>`).join("")}
+      </fieldset>
+      <label class="mjl-stock-rarity">Максимальная редкость магического оружия<select name="rarity"></select></label>`,
     setTier: (fields, tier) => {
       fields.rarity.replaceChildren(...raritiesForTier(tier).map(rarity => new Option(rarityLabel(rarity), rarity)));
       fields.rarity.value = defaultRarityForTier(tier);
     },
-    roll: (pool, fields, tier) => rollArmory(pool, tier, Object.fromEntries(Object.keys(WEAPONS).map(name =>
-      [name, fields.namedItem(name).valueAsNumber])), fields.rarity.value, WEAPONS)
+    roll: (pool, fields, tier) => rollArmory(pool, tier, Object.keys(WEAPONS).filter(name => fields.namedItem(name).checked),
+      fields.rarity.value, WEAPONS)
   });
 }
 

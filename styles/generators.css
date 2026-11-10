@@ -91,6 +91,7 @@
 
 .mjl-book-preview { display: grid; gap: 9px; min-width: 0; }
 .mjl-stock-list { display: grid; gap: 6px; }
+.mjl-stock .mjl-book-options:not(:has(input[name="magic"]:checked)) > .mjl-stock-rarity { display: none; }
 .mjl-stock-budget { border-top: 1px solid var(--mjl-border); padding-top: 8px; }
 .mjl-stock-budget strong { color: var(--mjl-paper); }
 .mjl-stock .mjl-book-preview > .mjl-stock-list { max-height: min(52vh, 29rem); }
