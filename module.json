@@ -2,7 +2,7 @@
   "id": "mjl-dnd-generators",
   "title": "MJl - DnD Generators",
   "description": "Генераторы для мастера D&D 5e. Книги заклинаний, самоцветы и ассортимент оружейной из компендиумов Fifthpendium.",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "authors": [{"name": "MJl tools"}],
   "compatibility": {"minimum": "14.361", "verified": "14.361", "maximum": "14.999"},
   "relationships": {

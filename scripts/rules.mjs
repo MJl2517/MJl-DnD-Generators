@@ -10,7 +10,11 @@ const GEM_VALUES = [10, 50, 100, 500, 1000, 5000];
 // Keep up to three denominations at or below one tenth of a typical hoard per stone.
 export const GEM_TIERS = TIER_ECONOMY.map(({ hoard }) => GEM_VALUES.filter(price => price * 10 <= hoard).slice(-3));
 export const WEAPON_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
+const MODIFIERS = new Set(["weapon-1", "weapon-2", "weapon-3", "silvered-weapon", "adamantine-weapon", "vicious-weapon"]);
 const RARITY_VALUES = [100, 400, 4000, 40000, 200000];
+export const WEAPON_BONUS_PROFILES = WEAPON_RARITIES.slice(1, 4).map((rarity, profileIndex) => ({
+  rarity, profileIndex, price: RARITY_VALUES[profileIndex + 1], identifier: `weapon-${profileIndex + 1}`
+}));
 const RARITY_WEIGHTS = [[54, 37, 9, 0, 0], [30, 51, 17, 2, 0], [11, 23, 36, 23, 7], [0, 0, 20, 44, 36]];
 
 export const raritiesForTier = tier => WEAPON_RARITIES.filter((_, index) => RARITY_WEIGHTS[tier - 1]?.[index]);
@@ -21,13 +25,31 @@ export function defaultRarityForTier(tier) {
   return allowed.findLast(rarity => RARITY_VALUES[WEAPON_RARITIES.indexOf(rarity)] <= (startingGold || hoard)) ?? allowed[0];
 }
 
-export function weaponCategory({ type, rarity, properties }) {
+export function weaponCategory({ type, rarity, properties, identifier }) {
+  if (!type.baseItem && MODIFIERS.has(identifier) && WEAPON_RARITIES.includes(rarity)) return "modifier";
   if (!["simpleM", "simpleR", "martialM", "martialR"].includes(type.value)) return;
   if (rarity || properties?.includes("mgc")) {
     if (type.baseItem && WEAPON_RARITIES.includes(rarity)) return "magic";
     return;
   }
   return type.value.startsWith("simple") ? "simple" : "martial";
+}
+
+export function expandWeaponVariants(pool) {
+  const bases = new Map();
+  for (const row of pool) {
+    if (row.category !== "simple" && row.category !== "martial") continue;
+    const key = row.baseItem || row.uuid;
+    // A focus staff can share the quarterstaff base. Prefer the weapon's own PHB entry.
+    if (!bases.has(key) || row.identifier?.replaceAll("-", "") === key) bases.set(key, row);
+  }
+  return pool.flatMap(row => {
+    if (row.category !== "modifier") return [row];
+    return [...bases.values()].filter(base => row.identifier !== "adamantine-weapon" || base.weaponType.endsWith("M")).map(base => ({
+      category: "magic", rarity: row.rarity, uuid: base.uuid, modifierUuid: row.uuid, profileIndex: row.profileIndex,
+      price: Math.round((row.price + base.price) * 100) / 100
+    }));
+  });
 }
 
 export function rollGems(pool, tier, value, count, random = Math.random) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { defaultRarityForTier, GEM_TIERS, rollArmory, rollGems, rollSpellbook, TIERS, weaponCategory,
+import { defaultRarityForTier, expandWeaponVariants, GEM_TIERS, rollArmory, rollGems, rollSpellbook, TIERS, weaponCategory,
   WEAPON_RARITIES } from "../scripts/rules.mjs";
 
 const pool = Array.from({ length: 10 }, (_, level) =>
@@ -45,3 +45,18 @@ assert.equal(rollArmory(weapons, 1, ["magic"], "rare", labels, () => 0.54)[0].ra
 assert.throws(() => rollArmory(weapons, 4, ["magic"], "uncommon", labels), /предел редкости/);
 assert.throws(() => rollArmory([], 1, ["magic"], "rare", labels), /подходящих позиций/);
 assert.throws(() => rollArmory(weapons, 1, [], "rare", labels), /хотя бы один/);
+
+assert.equal(weaponCategory({ type: { value: "" }, identifier: "weapon-1", rarity: "uncommon" }), "modifier");
+assert.equal(weaponCategory({ type: { value: "" }, identifier: "weapon-4", rarity: "legendary" }), undefined);
+const expanded = expandWeaponVariants([
+  { uuid: "duplicate-club", category: "simple", weaponType: "simpleM", baseItem: "club", identifier: "club-focus", price: 5 },
+  { uuid: "club", category: "simple", weaponType: "simpleM", baseItem: "club", identifier: "club", price: 0.1 },
+  { uuid: "longbow", category: "martial", weaponType: "martialR", price: 50 },
+  { uuid: "unique-staff", category: "magic", rarity: "uncommon", price: 400 },
+  { uuid: "plus-one", category: "modifier", identifier: "weapon-1", rarity: "uncommon", price: 400 },
+  { uuid: "adamantine", category: "modifier", identifier: "adamantine-weapon", rarity: "uncommon", price: 400 }
+]);
+assert.deepEqual(expanded.filter(row => row.category === "magic").map(row => [row.uuid, row.modifierUuid, row.price]), [
+  ["unique-staff", undefined, 400], ["club", "plus-one", 400.1], ["longbow", "plus-one", 450], ["club", "adamantine", 400.1]
+]);
+assert.equal(rollArmory(expanded, 1, ["magic"], "uncommon", labels, () => 0.5)[0].modifierUuid, "plus-one");

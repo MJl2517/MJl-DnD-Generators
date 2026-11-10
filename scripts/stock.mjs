@@ -1,5 +1,5 @@
-import { defaultRarityForTier, GEM_TIERS, raritiesForTier, rollArmory, rollGems, TIER_ECONOMY, TIER_LABELS,
-  weaponCategory } from "./rules.mjs";
+import { defaultRarityForTier, expandWeaponVariants, GEM_TIERS, raritiesForTier, rollArmory, rollGems, TIER_ECONOMY, TIER_LABELS,
+  WEAPON_BONUS_PROFILES, weaponCategory } from "./rules.mjs";
 import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
@@ -16,6 +16,10 @@ async function readStock(kind) {
       const system = item.system;
       const book = system?.source?.book;
       if (!system?.type || system.source?.rules !== "2024" || !["PHB 2024", "DMG 2024"].includes(book)) return [];
+      if (kind === "armory" && item.type === "weapon" && book === "DMG 2024" && system.identifier === "weapon-1-2-or-3") {
+        return WEAPON_BONUS_PROFILES.map(profile => ({ ...profile, uuid: item.uuid, category: "modifier",
+          key: `modifier:${profile.identifier}::${profile.rarity}` }));
+      }
       const { value, denomination } = system.price ?? {};
       const price = value / CONFIG.DND5E.currencies[denomination]?.conversion;
       if (!Number.isFinite(price) || price <= 0) return [];
@@ -27,15 +31,50 @@ async function readStock(kind) {
       const identifier = system.identifier || item.name.toLowerCase().trim();
       const key = category === "gem" ? `${identifier}:${price}`
         : `${category}:${identifier}:${system.type.baseItem ?? ""}:${system.rarity ?? ""}`;
-      return [{ key, uuid: item.uuid, category, rarity: system.rarity, price }];
+      return [{ key, uuid: item.uuid, category, rarity: system.rarity, price, identifier,
+        weaponType: system.type.value, baseItem: system.type.baseItem }];
     });
   }));
   const unique = new Map();
   for (const item of entries.flat()) {
-    if (!unique.has(item.key)) unique.set(item.key, item);
+    if (!unique.has(item.key) || (unique.get(item.key).profileIndex != null && item.profileIndex == null)) unique.set(item.key, item);
   }
   if (!unique.size) throw new Error("Подключите компендиум Fifthpendium с подходящими предметами.");
-  return [...unique.values()];
+  const pool = [...unique.values()];
+  return kind === "armory" ? expandWeaponVariants(pool) : pool;
+}
+
+async function resolveStockItem(row) {
+  const base = await fromUuid(row.uuid);
+  if (!base) throw new Error("Предмет не найден в компендиуме. Повторите генерацию.");
+  if (!row.modifierUuid) return { link: base, item: base };
+
+  const template = await fromUuid(row.modifierUuid);
+  const activity = template?.system.activities.getByType("enchant")[0];
+  const profile = activity?.effects[row.profileIndex ?? 0];
+  const source = template?.effects.get(profile?._id);
+  if (!source || activity.canEnchant(base) !== true) {
+    throw new Error(`Не удалось применить модификатор «${template?.name ?? row.modifierUuid}» к оружию «${base.name}».`);
+  }
+
+  const data = game.items.fromCompendium(base, { clearFolder: true });
+  // Fifthpendium cleans bracketed aliases on creation using the already-enchanted name.
+  data.name = data.name.replace(/\s*\[[^\]]*\]/g, "").trim();
+  data.system.source = template.toObject().system.source;
+  data.system.price = { value: row.price, denomination: "gp" };
+  data.flags[ID] = { modifier: template.uuid };
+  const effect = source.clone({ origin: activity.uuid, disabled: false, "flags.dnd5e.enchantmentProfile": profile._id }).toObject();
+  effect._id = foundry.utils.randomID();
+  // Set the final price once, after converting the base cost from its original denomination.
+  const keep = change => !change.key.startsWith("system.price.");
+  if (effect.system?.changes) effect.system.changes = effect.system.changes.filter(keep);
+  if (effect.changes) effect.changes = effect.changes.filter(keep);
+  if (template.system.identifier === "silvered-weapon") {
+    effect.system.changes.push({ key: "system.properties", type: "add", value: "mgc", phase: "initial", priority: 20 });
+  }
+  data.effects.push(effect);
+  const item = new CONFIG.Item.documentClass(data);
+  return { link: template, item, data };
 }
 
 const numberField = (name, label, min, max, value) =>
@@ -134,8 +173,7 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
     preview.innerHTML = previewStatus("Читаю компендиумы…", "fa-hourglass-half");
     const tier = Number(form.elements.tier.value);
     const rows = roll(await readStock(kind), form.elements, tier);
-    const items = await Promise.all(rows.map(row => fromUuid(row.uuid)));
-    if (items.some(item => !item)) throw new Error("Один из предметов не найден в компендиуме. Повторите генерацию.");
+    const items = await Promise.all(rows.map(resolveStockItem));
     const total = rows.reduce((sum, row) => sum + row.price * row.quantity, 0);
     const quantity = rows.reduce((sum, row) => sum + row.quantity, 0);
     preview.innerHTML = `<div class="mjl-book-price"><div><span>Общая стоимость</span><strong>${gold(total)}</strong></div>
@@ -143,16 +181,18 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
     const list = preview.querySelector(".mjl-stock-list");
     rows.forEach((row, index) => {
       const details = row.category === "gem" ? `${row.quantity} шт. × ${gold(row.price)}`
-        : [WEAPONS[row.category], row.category === "magic" ? rarityLabel(row.rarity) : null, gold(row.price)].filter(Boolean).join(" · ");
-      list.append(itemLink(items[index], details, icon));
+        : [WEAPONS[row.category], row.category === "magic" ? rarityLabel(row.rarity) : null, gold(row.price),
+          row.modifierUuid ? "Шаблон в компендиуме" : null].filter(Boolean).join(" · ");
+      const { link, item } = items[index];
+      list.append(itemLink(link, details, icon, item));
     });
-    stock = rows.map((row, index) => ({ item: items[index], quantity: row.quantity }));
+    stock = items.map((entry, index) => ({ ...entry, quantity: rows[index].quantity }));
   }
 
   async function save(_form, preview) {
     if (!stock || saved) return;
-    const data = stock.map(({ item, quantity }) => {
-      const copy = game.items.fromCompendium(item, { clearFolder: true });
+    const data = stock.map(({ item, data, quantity }) => {
+      const copy = data ? foundry.utils.deepClone(data) : game.items.fromCompendium(item, { clearFolder: true });
       copy.system.quantity = quantity;
       return copy;
     });
