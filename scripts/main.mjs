@@ -1,5 +1,5 @@
 import { LIBRARY, rollSpellbook, TIERS, TIER_LABELS } from "./rules.mjs";
-import { openArmory, openGems } from "./stock.mjs";
+import { openArmory, openArt, openGems, openGoods } from "./stock.mjs";
 import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
@@ -33,7 +33,9 @@ Hooks.on("getSceneControlButtons", controls => {
         onChange: openSpellbook
       },
       gems: { name: "gems", title: "Самоцветы", icon: "fa-solid fa-gem", order: 2, button: true, onChange: openGems },
-      armory: { name: "armory", title: "Ассортимент оружейной", icon: "fa-solid fa-swords", order: 3, button: true, onChange: openArmory }
+      armory: { name: "armory", title: "Ассортимент оружейной", icon: "fa-solid fa-swords", order: 3, button: true, onChange: openArmory },
+      art: { name: "art", title: "Предметы искусства", icon: "fa-solid fa-palette", order: 4, button: true, onChange: openArt },
+      goods: { name: "goods", title: "Товары", icon: "fa-solid fa-boxes-stacked", order: 5, button: true, onChange: openGoods }
     }
   };
 });

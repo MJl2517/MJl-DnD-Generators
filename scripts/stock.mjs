@@ -1,45 +1,53 @@
-import { defaultRarityForTier, expandWeaponVariants, GEM_TIERS, raritiesForTier, rollArmory, rollGems, TIER_ECONOMY, TIER_LABELS,
-  WEAPON_BONUS_PROFILES, weaponCategory } from "./rules.mjs";
+import { ART_TIERS, defaultRarityForTier, expandWeaponVariants, GEM_TIERS, isTradeGood, raritiesForTier, rollArmory,
+  rollStock, TIER_ECONOMY, TIER_LABELS, WEAPON_BONUS_PROFILES, weaponCategory } from "./rules.mjs";
 import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
 const WEAPONS = { simple: "Простое оружие", martial: "Воинское оружие", magic: "Магическое оружие" };
 const STOCK_PACKS = ["ag-fifthpendium.equipment", "fifthpendium.items"];
+const CUSTOM_PACK = "majluha-things.mjl_thg_itm";
+const LOOT_TYPES = { gems: "gem", art: "art" };
 const INDEX_FIELDS = ["system.identifier", "system.type.value", "system.type.baseItem", "system.price.value",
   "system.price.denomination", "system.properties", "system.rarity", "system.source.rules", "system.source.book"];
 
-async function readStock(kind) {
-  const packs = STOCK_PACKS.map(id => game.packs.get(id)).filter(Boolean);
+async function readStock(kind, includeCustom) {
+  const sources = includeCustom ? [...STOCK_PACKS, CUSTOM_PACK] : STOCK_PACKS;
+  const packs = sources.map(id => game.packs.get(id)).filter(Boolean);
   const entries = await Promise.all(packs.map(async pack => {
-    const index = await pack.getIndex({ fields: INDEX_FIELDS });
+    const custom = pack.collection === CUSTOM_PACK;
+    const tradeFolders = new Set(custom && kind === "goods"
+      ? pack.folders.filter(folder => ["Товары", "Trade Goods"].includes(folder.name)).map(folder => folder.id) : []);
+    const index = await pack.getIndex({ fields: [...INDEX_FIELDS, "folder"] });
     return index.contents.flatMap(item => {
       const system = item.system;
       const book = system?.source?.book;
-      if (!system?.type || system.source?.rules !== "2024" || !["PHB 2024", "DMG 2024"].includes(book)) return [];
-      if (kind === "armory" && item.type === "weapon" && book === "DMG 2024" && system.identifier === "weapon-1-2-or-3") {
+      if (!system || (!custom && (system.source?.rules !== "2024" || !["PHB 2024", "DMG 2024"].includes(book)))) return [];
+      if (!custom && kind === "armory" && item.type === "weapon" && book === "DMG 2024" && system.identifier === "weapon-1-2-or-3") {
         return WEAPON_BONUS_PROFILES.map(profile => ({ ...profile, uuid: item.uuid, category: "modifier",
           key: `modifier:${profile.identifier}::${profile.rarity}` }));
       }
       const { value, denomination } = system.price ?? {};
       const price = value / CONFIG.DND5E.currencies[denomination]?.conversion;
       if (!Number.isFinite(price) || price <= 0) return [];
-      const category = kind === "gems" && item.type === "loot" && system.type.value === "gem" ? "gem"
-        : kind === "armory" && item.type === "weapon" ? weaponCategory(system) : undefined;
-      if (!category || (category === "gem" && !GEM_TIERS.some(values => values.includes(price)))) return [];
+      let category;
+      if (kind === "armory" && item.type === "weapon" && system.type) category = weaponCategory(system);
+      if (kind === "goods" && isTradeGood(item, tradeFolders.has(item.folder?.id ?? item.folder))) category = "trade";
+      if (LOOT_TYPES[kind] && item.type === "loot" && system.type?.value === LOOT_TYPES[kind]) category = LOOT_TYPES[kind];
+      if (!category || (custom && category === "modifier")) return [];
       // The DMG's mundane weapons are siege gear and optional modern or futuristic firearms.
-      if ((category === "simple" || category === "martial") && book === "DMG 2024") return [];
+      if (!custom && (category === "simple" || category === "martial") && book === "DMG 2024") return [];
       const identifier = system.identifier || item.name.toLowerCase().trim();
-      const key = category === "gem" ? `${identifier}:${price}`
-        : `${category}:${identifier}:${system.type.baseItem ?? ""}:${system.rarity ?? ""}`;
-      return [{ key, uuid: item.uuid, category, rarity: system.rarity, price, identifier,
-        weaponType: system.type.value, baseItem: system.type.baseItem }];
+      const key = kind === "armory" ? `${category}:${identifier}:${system.type.baseItem ?? ""}:${system.rarity ?? ""}`
+        : `${identifier}:${price}`;
+      return [{ key, uuid: item.uuid, category, rarity: system.rarity, price, identifier, custom,
+        weaponType: system.type?.value, baseItem: system.type?.baseItem }];
     });
   }));
   const unique = new Map();
   for (const item of entries.flat()) {
     if (!unique.has(item.key) || (unique.get(item.key).profileIndex != null && item.profileIndex == null)) unique.set(item.key, item);
   }
-  if (!unique.size) throw new Error("Подключите компендиум Fifthpendium с подходящими предметами.");
+  if (!unique.size) throw new Error("В подключённых компендиумах нет подходящих предметов. Проверьте AG Fifthpendium и MaJluHa Things.");
   const pool = [...unique.values()];
   return kind === "armory" ? expandWeaponVariants(pool) : pool;
 }
@@ -82,14 +90,40 @@ const numberField = (name, label, min, max, value) =>
 
 const rarityLabel = rarity => game.i18n.localize(CONFIG.DND5E.itemRarity[rarity] ?? rarity);
 
-export function openGems() {
+function openValuables({ bands, quantityLabel, ...options }) {
   return openStock({
-    kind: "gems", title: "Самоцветы", subtitle: "Драгоценные камни из Руководства Мастера 2024", icon: "fa-gem",
-    fields: `<label>Цена за камень<select name="value"></select></label>
-      ${numberField("quantity", "Количество камней", 1, 100, 4)}`,
+    ...options,
+    fields: `<label>Цена за единицу<select name="value"></select></label>
+      ${numberField("quantity", quantityLabel, 1, 100, 4)}`,
     setTier: (fields, tier) => fields.value.replaceChildren(new Option("Случайная по тиру", "0"),
-      ...GEM_TIERS[tier - 1].map(value => new Option(gold(value), value))),
-    roll: (pool, fields, tier) => rollGems(pool, tier, Number(fields.value.value), fields.quantity.valueAsNumber)
+      ...bands[tier - 1].map(value => new Option(gold(value), value))),
+    roll: (pool, fields, tier) => rollStock(pool, { tier, bands, value: Number(fields.value.value), count: fields.quantity.valueAsNumber })
+  });
+}
+
+export function openGems() {
+  return openValuables({
+    kind: "gems", title: "Самоцветы", subtitle: "Драгоценные камни из Руководства Мастера 2024", icon: "fa-gem",
+    bands: GEM_TIERS, quantityLabel: "Количество камней"
+  });
+}
+
+export function openArt() {
+  return openValuables({
+    kind: "art", title: "Предметы искусства", subtitle: "Ценности из Руководства Мастера 2024", icon: "fa-palette",
+    bands: ART_TIERS, quantityLabel: "Количество предметов"
+  });
+}
+
+export function openGoods() {
+  return openStock({
+    kind: "goods", title: "Товары", subtitle: "Торговые товары из Руководства Мастера 2024", icon: "fa-boxes-stacked",
+    fields: `${numberField("quantity", "Количество единиц товара", 1, 100, 4)}<p class="mjl-book-copy mjl-trade-limit"></p>`,
+    setTier: (fields, tier) => {
+      fields.quantity.form.querySelector(".mjl-trade-limit").textContent =
+        `Цена за единицу до ${gold(TIER_ECONOMY[tier - 1].hoard / 10)}`;
+    },
+    roll: (pool, fields, tier) => rollStock(pool, { tier, count: fields.quantity.valueAsNumber })
   });
 }
 
@@ -118,6 +152,7 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
   let stock;
   let busy = false;
   let saved = false;
+  const customAvailable = game.packs.has(CUSTOM_PACK);
   const initial = "Выберите параметры и сгенерируйте список.";
   const { DialogV2 } = foundry.applications.api;
   const dialog = new DialogV2({
@@ -132,6 +167,10 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
       <div class="mjl-book-layout">
         <fieldset class="mjl-book-options" aria-label="Параметры генерации">
           <label>Тир партии<select name="tier">${tierOptions()}</select></label>${fields}
+          <fieldset class="mjl-book-sources"><legend>Дополнительный источник</legend>
+            <label><input type="checkbox" name="custom" ${customAvailable ? "" : "disabled"}>
+              <span>MaJluHa Things${customAvailable ? "" : "<small>Не подключено</small>"}</span></label>
+          </fieldset>
           <div class="mjl-stock-budget mjl-book-copy"></div></fieldset>
         <section class="mjl-book-result" aria-label="Результат генерации">
           <div class="mjl-book-preview">${previewStatus(initial, icon)}</div>
@@ -172,7 +211,7 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
     saved = false;
     preview.innerHTML = previewStatus("Читаю компендиумы…", "fa-hourglass-half");
     const tier = Number(form.elements.tier.value);
-    const rows = roll(await readStock(kind), form.elements, tier);
+    const rows = roll(await readStock(kind, form.elements.custom.checked), form.elements, tier);
     const items = await Promise.all(rows.map(resolveStockItem));
     const total = rows.reduce((sum, row) => sum + row.price * row.quantity, 0);
     const quantity = rows.reduce((sum, row) => sum + row.quantity, 0);
@@ -180,11 +219,11 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
       <small>Тир ${TIER_LABELS[tier - 1]} · Предметов: ${quantity}</small></div><div class="mjl-book-entries mjl-stock-list"></div>`;
     const list = preview.querySelector(".mjl-stock-list");
     rows.forEach((row, index) => {
-      const details = row.category === "gem" ? `${row.quantity} шт. × ${gold(row.price)}`
+      const details = kind !== "armory" ? `${row.quantity} шт. × ${gold(row.price)}`
         : [WEAPONS[row.category], row.category === "magic" ? rarityLabel(row.rarity) : null, gold(row.price),
           row.modifierUuid ? "Шаблон в компендиуме" : null].filter(Boolean).join(" · ");
       const { link, item } = items[index];
-      list.append(itemLink(link, details, icon, item));
+      list.append(itemLink(link, row.custom ? `${details} · MaJluHa Things` : details, icon, item));
     });
     stock = items.map((entry, index) => ({ ...entry, quantity: rows[index].quantity }));
   }

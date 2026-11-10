@@ -6,9 +6,17 @@ export const TIER_ECONOMY = [
   { startingGold: 0, hoard: 500 }, { startingGold: 637.5, hoard: 4400 },
   { startingGold: 6375, hoard: 36000 }, { startingGold: 21375, hoard: 330000 }
 ];
-const GEM_VALUES = [10, 50, 100, 500, 1000, 5000];
-// Keep up to three denominations at or below one tenth of a typical hoard per stone.
-export const GEM_TIERS = TIER_ECONOMY.map(({ hoard }) => GEM_VALUES.filter(price => price * 10 <= hoard).slice(-3));
+// Keep up to three denominations at or below one tenth of a typical hoard per item.
+const valueTiers = values => TIER_ECONOMY.map(({ hoard }) => values.filter(price => price * 10 <= hoard).slice(-3));
+export const GEM_TIERS = valueTiers([10, 50, 100, 500, 1000, 5000]);
+export const ART_TIERS = valueTiers([25, 250, 750, 2500, 7500]);
+const TRADE_ANIMALS = new Set(["chicken", "cow", "goat", "ox", "pig", "sheep"]);
+
+export function isTradeGood(item, inTradeFolder) {
+  // DMG livestock share the same Loot subtype as other trade goods.
+  return !TRADE_ANIMALS.has(item.system.identifier) &&
+    (inTradeFolder || (item.type === "loot" && item.system.type?.value === "trade"));
+}
 export const WEAPON_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
 const MODIFIERS = new Set(["weapon-1", "weapon-2", "weapon-3", "silvered-weapon", "adamantine-weapon", "vicious-weapon"]);
 const RARITY_VALUES = [100, 400, 4000, 40000, 200000];
@@ -38,7 +46,7 @@ export function weaponCategory({ type, rarity, properties, identifier }) {
 export function expandWeaponVariants(pool) {
   const bases = new Map();
   for (const row of pool) {
-    if (row.category !== "simple" && row.category !== "martial") continue;
+    if (row.custom || (row.category !== "simple" && row.category !== "martial")) continue;
     const key = row.baseItem || row.uuid;
     // A focus staff can share the quarterstaff base. Prefer the weapon's own PHB entry.
     if (!bases.has(key) || row.identifier?.replaceAll("-", "") === key) bases.set(key, row);
@@ -52,14 +60,19 @@ export function expandWeaponVariants(pool) {
   });
 }
 
-export function rollGems(pool, tier, value, count, random = Math.random) {
-  const values = GEM_TIERS[tier - 1];
-  if (!values || (value !== 0 && !values.includes(value)) || !Number.isInteger(count) || count < 1 || count > 100) {
-    throw new Error("Выберите стоимость в пределах тира и укажите от 1 до 100 самоцветов.");
+export function rollStock(pool, { tier, count, value = 0, bands }, random = Math.random) {
+  const budget = TIER_ECONOMY[tier - 1]?.hoard / 10;
+  const values = bands?.[tier - 1];
+  if (!budget || (value !== 0 && !values?.includes(value)) || !Number.isInteger(count) || count < 1 || count > 100) {
+    throw new Error("Выберите стоимость в пределах тира и укажите от 1 до 100 предметов.");
   }
-  const available = [...Map.groupBy(pool.filter(entry => value ? entry.price === value : values.includes(entry.price)),
-    entry => entry.price).values()];
-  if (!available.length) throw new Error("В подключённых компендиумах нет самоцветов выбранной стоимости.");
+  const eligible = pool.filter(entry => {
+    if (value) return entry.price === value;
+    if (!values || entry.custom) return entry.price <= budget;
+    return values.includes(entry.price);
+  });
+  if (!eligible.length) throw new Error("В подключённых компендиумах нет предметов подходящей стоимости.");
+  const available = values ? [...Map.groupBy(eligible, entry => entry.price).values()] : [eligible];
   const stock = new Map();
   for (let i = 0; i < count; i++) {
     const band = available[Math.floor(random() * available.length)];

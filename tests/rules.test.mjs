@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { defaultRarityForTier, expandWeaponVariants, GEM_TIERS, rollArmory, rollGems, rollSpellbook, TIERS, weaponCategory,
-  WEAPON_RARITIES } from "../scripts/rules.mjs";
+import { ART_TIERS, defaultRarityForTier, expandWeaponVariants, GEM_TIERS, isTradeGood, rollArmory, rollSpellbook,
+  rollStock, TIERS, weaponCategory, WEAPON_RARITIES } from "../scripts/rules.mjs";
 
 const pool = Array.from({ length: 10 }, (_, level) =>
   Array.from({ length: 12 }, (_, index) => ({ key: `${level}-${index}`, level }))
@@ -25,9 +25,22 @@ assert.throws(() => rollSpellbook(pool, 1, 5), /соответствовать/)
 
 const gems = [10, 50, 100, 500, 1000, 5000].map(price => ({ uuid: `gem-${price}`, price }));
 assert.deepEqual(GEM_TIERS, [[10, 50], [10, 50, 100], [100, 500, 1000], [500, 1000, 5000]]);
-assert.deepEqual(rollGems(gems, 1, 50, 4, () => 0), [{ ...gems[1], quantity: 4 }]);
-assert.equal(rollGems(gems, 4, 0, 1, () => 0.99)[0].price, 5000);
-assert.throws(() => rollGems(gems, 1, 100, 1), /в пределах тира/);
+assert.deepEqual(rollStock(gems, { tier: 1, value: 50, count: 4, bands: GEM_TIERS }, () => 0), [{ ...gems[1], quantity: 4 }]);
+assert.equal(rollStock(gems, { tier: 4, count: 1, bands: GEM_TIERS }, () => 0.99)[0].price, 5000);
+assert.throws(() => rollStock(gems, { tier: 1, value: 100, count: 1, bands: GEM_TIERS }), /в пределах тира/);
+
+assert.deepEqual(ART_TIERS, [[25], [25, 250], [250, 750, 2500], [750, 2500, 7500]]);
+const customArt = { uuid: "custom-art", price: 30, custom: true };
+assert.equal(rollStock([customArt], { tier: 1, count: 1, bands: ART_TIERS })[0].uuid, customArt.uuid);
+assert.throws(() => rollStock([customArt], { tier: 1, count: 1, value: 25, bands: ART_TIERS }), /нет предметов/);
+const tradeGood = identifier => ({ type: "loot", system: { identifier, type: { value: "trade" } } });
+assert.equal(isTradeGood(tradeGood("silk")), true);
+for (const animal of ["chicken", "cow", "goat", "ox", "pig", "sheep"]) assert.equal(isTradeGood(tradeGood(animal), true), false);
+assert.equal(isTradeGood({ type: "container", system: {} }, true), true);
+assert.equal(isTradeGood({ type: "container", system: {} }, false), false);
+const goods = [{ uuid: "wheat", price: 0.01 }, { uuid: "gold-bar-5", price: 250 }];
+assert.equal(rollStock(goods, { tier: 1, count: 1 }, () => 0.99)[0].uuid, "wheat");
+assert.equal(rollStock(goods, { tier: 2, count: 1 }, () => 0.99)[0].uuid, "gold-bar-5");
 
 const labels = { simple: "Простое", martial: "Воинское", magic: "Магическое" };
 const weapons = [
