@@ -95,8 +95,28 @@ async function loadSpellPool(excluded) {
 
 function spellContents(spells) {
   const groups = Map.groupBy(spells.toSorted((a, b) => a.level - b.level || a.name.localeCompare(b.name, "ru")), spell => spell.level);
-  return Array.from(groups, ([level, group]) => `<h4>Круг ${level}</h4><ul>${group.map(spell =>
-    `<li>@UUID[${spell.uuid}]</li>`).join("")}</ul>`).join("");
+  return Array.from(groups, ([level, group]) => `<section class="mjl-book-circle"><h4>Круг ${level}</h4><ul>${group.map(spell =>
+    `<li>@UUID[${spell.uuid}]</li>`).join("")}</ul></section>`).join("");
+}
+
+function bookLink(item, action) {
+  const link = item.toAnchor({ classes: ["mjl-book-link"], attrs: { href: "#", "aria-label": `${action} · ${item.name}` } });
+  link.innerHTML = `<span class="mjl-book-cover" aria-hidden="true"><i class="fa-solid fa-book"></i></span>
+    <span class="mjl-book-link-text"><strong></strong><small></small></span>
+    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>`;
+  link.querySelector("strong").textContent = item.name;
+  link.querySelector("small").textContent = action;
+  const cover = document.createElement("img");
+  cover.alt = "";
+  cover.addEventListener("error", () => cover.remove(), { once: true });
+  cover.src = item.img;
+  link.querySelector(".mjl-book-cover").append(cover);
+  return link;
+}
+
+function previewStatus(text, icon = "fa-book-open") {
+  return `<p class="mjl-book-status" role="status"><i class="fa-solid ${icon}" aria-hidden="true"></i>
+    <span>${foundry.utils.escapeHTML(text)}</span></p>`;
 }
 
 function openSpellbook() {
@@ -111,33 +131,35 @@ function openSpellbook() {
 
   const dialog = new DialogV2({
     id: DIALOG_ID,
-    classes: [ID],
-    window: { title: "Книга заклинаний волшебника", icon: "fa-solid fa-book-sparkles", resizable: true },
-    position: { width: 560 },
+    classes: ["mjl-brand", ID],
+    window: { title: "MJl - DnD Generators", icon: "fa-solid fa-book-sparkles", resizable: true },
+    position: { width: 800 },
     form: { closeOnSubmit: false },
     content: `
-      <p>Соберите трофейную книгу из заклинаний подключённых библиотек Fifthpendium.</p>
-      <fieldset class="mjl-book-options">
-      <div class="form-group"><label for="${ID}-tier">Тир партии</label><div class="form-fields">
-        <select id="${ID}-tier" name="tier">${TIERS.map(([min, max], i) =>
-          `<option value="${i + 1}">${TIER_LABELS[i]} · уровни ${min}–${max}</option>`).join("")}</select>
-      </div></div>
-      <div class="form-group"><label for="${ID}-level">Уровень волшебника</label><div class="form-fields">
-        <select id="${ID}-level" name="level"></select>
-      </div></div>
-      <div class="form-group"><label for="${ID}-kind">Вид книги</label><div class="form-fields">
-        <select id="${ID}-kind" name="kind">${Array.from(BOOK_TYPES, ([key, book]) =>
-          `<option value="${key}">${book.label}</option>`).join("")}</select>
-      </div></div>
-      <fieldset class="mjl-book-sources"><legend>Дополнительные источники</legend>
-        ${Array.from(SUPPLEMENTS, ([id, label]) => {
-          const active = game.modules.get(id)?.active;
-          return `<label><input type="checkbox" name="${id}" ${active ? "checked" : "disabled"}>
-            ${label}${active ? "" : " (не подключено)"}</label>`;
-        }).join("")}
-      </fieldset>
-      </fieldset>
-      <div class="mjl-book-preview" aria-live="polite"><p>Выберите тир и уровень, затем сгенерируйте книгу.</p></div>`,
+      <header class="mjl-book-heading">
+        <span class="mjl-book-glyph"><i class="fa-solid fa-book-sparkles" aria-hidden="true"></i></span>
+        <div><h2>Книга заклинаний волшебника</h2><p>Трофей из компендиумов Fifthpendium</p></div>
+      </header>
+      <div class="mjl-book-layout">
+        <fieldset class="mjl-book-options" aria-label="Параметры книги">
+          <label>Тир партии<select name="tier">${TIERS.map(([min, max], i) =>
+            `<option value="${i + 1}">${TIER_LABELS[i]} · уровни ${min}–${max}</option>`).join("")}</select></label>
+          <label>Уровень волшебника<select name="level"></select></label>
+          <label>Вид книги<select name="kind">${Array.from(BOOK_TYPES, ([key, book]) =>
+            `<option value="${key}">${book.label}</option>`).join("")}</select></label>
+          <fieldset class="mjl-book-sources"><legend>Дополнительные источники</legend>
+            ${Array.from(SUPPLEMENTS, ([id, label]) => {
+              const active = game.modules.get(id)?.active;
+              return `<label><input type="checkbox" name="${id}" ${active ? "checked" : "disabled"}>
+                <span>${label}${active ? "" : "<small>Не подключено</small>"}</span></label>`;
+            }).join("")}
+          </fieldset>
+        </fieldset>
+        <section class="mjl-book-result" aria-label="Предпросмотр книги">
+          <div class="mjl-book-preview">${previewStatus("Выберите параметры и сгенерируйте книгу.")}</div>
+          <div class="mjl-book-created" hidden></div>
+        </section>
+      </div>`,
     buttons: [
       { action: "roll", label: "Сгенерировать", icon: "fa-solid fa-dice", default: true,
         callback: (_event, button) => generate(button.form) },
@@ -156,6 +178,7 @@ function openSpellbook() {
   async function generate(form) {
     if (busy) return;
     const preview = form.querySelector(".mjl-book-preview");
+    const created = form.querySelector(".mjl-book-created");
     const { tier, level, kind } = form.elements;
     const settings = form.querySelector(".mjl-book-options");
     const selectedTier = Number(tier.value);
@@ -163,7 +186,8 @@ function openSpellbook() {
     settings.disabled = busy = true;
     result = undefined;
     saved = false;
-    preview.textContent = "Читаю библиотеки и подбираю заклинания…";
+    created.hidden = true;
+    preview.innerHTML = previewStatus("Читаю библиотеки и подбираю заклинания…", "fa-hourglass-half");
     try {
       const base = await loadBase(kind.value);
       const excluded = new Set(Array.from(SUPPLEMENTS.keys()).filter(id => !form.elements.namedItem(id).checked));
@@ -176,14 +200,19 @@ function openSpellbook() {
       const price = basePrice + book.contentsPrice;
       const contents = spellContents(book.spells);
       const editor = foundry.applications.ux.TextEditor.implementation;
-      const html = await editor.enrichHTML(`<h3>@UUID[${base.uuid}]</h3>
-        <p>Тир ${TIER_LABELS[selectedTier - 1]} · волшебник ${wizardLevel}-го уровня · заклинаний: ${book.spells.length}</p>
-        <p><strong>Цена книги: ${gold(price)}</strong> (${gold(basePrice)} за книгу и ${gold(book.contentsPrice)} за записи).<br>
-        Переписать все заклинания: ${gold(book.copyCost)} и ${formatNumber.format(book.copyHours)} ч.</p>${contents}`);
+      const html = await editor.enrichHTML(`
+        <div class="mjl-book-facts"><span>Тир ${TIER_LABELS[selectedTier - 1]}</span>
+          <span>Уровень ${wizardLevel}</span><span>Заклинаний: ${book.spells.length}</span></div>
+        <div class="mjl-book-price"><div><span>Цена находки</span><strong>${gold(price)}</strong></div>
+          <small>${gold(basePrice)} за книгу + ${gold(book.contentsPrice)} за записи</small></div>
+        <p class="mjl-book-copy">Переписать всё: ${gold(book.copyCost)} · ${formatNumber.format(book.copyHours)} ч.</p>
+        <div class="mjl-book-entries">${contents}</div>`);
       preview.innerHTML = html;
+      preview.prepend(bookLink(base, "Открыть исходную книгу в компендиуме"));
+      for (const link of preview.querySelectorAll("a[data-link]")) link.href = "#";
       result = { base, price, contents, spells: book.spells, selectedTier, wizardLevel };
     } catch (error) {
-      preview.textContent = error.message;
+      preview.innerHTML = previewStatus(error.message, "fa-triangle-exclamation");
       console.error(ID, error);
     } finally {
       settings.disabled = busy = false;
@@ -200,11 +229,15 @@ function openSpellbook() {
       const data = game.items.fromCompendium(base, { clearFolder: true });
       data.name = `${base.name} · волшебник ${wizardLevel}-го уровня`;
       data.system.price = { value: price, denomination: "gp" };
-      data.system.description.value += `<h3>Записи волшебника ${wizardLevel}-го уровня</h3>${contents}`;
+      data.system.description.value += `<section class="mjl-book-entries"><h3>Записи волшебника ${wizardLevel}-го уровня</h3>${contents}</section>`;
       data.flags[ID] = { tier: selectedTier, wizardLevel, spells: spells.map(spell => spell.uuid) };
       const item = await Item.create(data);
       if (!item) throw new Error("Создание предмета отменено.");
       saved = true;
+      const created = form.querySelector(".mjl-book-created");
+      created.replaceChildren(bookLink(item, "Открыть созданную книгу"));
+      created.hidden = false;
+      if (dialog.rendered) dialog.setPosition();
       ui.notifications.info("Книга добавлена во вкладку «Предметы».");
       item.sheet.render({ force: true });
     } catch (error) {
@@ -225,7 +258,8 @@ function openSpellbook() {
     const clearResult = () => {
       if (!result) return;
       result = undefined;
-      form.querySelector(".mjl-book-preview").textContent = "Настройки изменились. Сгенерируйте новую книгу.";
+      form.querySelector(".mjl-book-created").hidden = true;
+      form.querySelector(".mjl-book-preview").innerHTML = previewStatus("Настройки изменились. Сгенерируйте новую книгу.");
       syncSave();
     };
     form.addEventListener("change", event => {
