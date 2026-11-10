@@ -1,8 +1,9 @@
-import { rollSpellbook, TIERS } from "./rules.mjs";
+import { LIBRARY, rollSpellbook, TIERS, TIER_LABELS } from "./rules.mjs";
+import { openArmory, openGems } from "./stock.mjs";
+import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
 const DIALOG_ID = `${ID}-spellbook`;
-const LIBRARY = /^(?:ag-)?fifthpendium(?:-|\.)/;
 const BOOK_SOURCES = ["ag-fifthpendium.equipment", "fifthpendium.items"];
 const BOOK_TYPES = new Map([
   ["ordinary", { identifier: "spellbook", label: "Обычная книга заклинаний" }],
@@ -13,7 +14,6 @@ const SUPPLEMENTS = new Map([
   ["ag-fifthpendium-forgotten-realms", "Forgotten Realms"],
   ["ag-fifthpendium-dndbeyond", "D&D Beyond"]
 ]);
-const TIER_LABELS = ["I", "II", "III", "IV"];
 const formatNumber = new Intl.NumberFormat("ru-RU");
 
 Hooks.on("getSceneControlButtons", controls => {
@@ -31,7 +31,9 @@ Hooks.on("getSceneControlButtons", controls => {
         order: 1,
         button: true,
         onChange: openSpellbook
-      }
+      },
+      gems: { name: "gems", title: "Самоцветы", icon: "fa-solid fa-gem", order: 2, button: true, onChange: openGems },
+      armory: { name: "armory", title: "Ассортимент оружейной", icon: "fa-solid fa-swords", order: 3, button: true, onChange: openArmory }
     }
   };
 });
@@ -99,32 +101,11 @@ function spellContents(spells) {
     `<li>@UUID[${spell.uuid}]</li>`).join("")}</ul></section>`).join("");
 }
 
-function bookLink(item, action) {
-  const link = item.toAnchor({ classes: ["mjl-book-link"], attrs: { href: "#", "aria-label": `${action} · ${item.name}` } });
-  link.innerHTML = `<span class="mjl-book-cover" aria-hidden="true"><i class="fa-solid fa-book"></i></span>
-    <span class="mjl-book-link-text"><strong></strong><small></small></span>
-    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>`;
-  link.querySelector("strong").textContent = item.name;
-  link.querySelector("small").textContent = action;
-  const cover = document.createElement("img");
-  cover.alt = "";
-  cover.addEventListener("error", () => cover.remove(), { once: true });
-  cover.src = item.img;
-  link.querySelector(".mjl-book-cover").append(cover);
-  return link;
-}
-
-function previewStatus(text, icon = "fa-book-open") {
-  return `<p class="mjl-book-status" role="status"><i class="fa-solid ${icon}" aria-hidden="true"></i>
-    <span>${foundry.utils.escapeHTML(text)}</span></p>`;
-}
-
 function openSpellbook() {
   const existing = foundry.applications.instances.get(DIALOG_ID);
   if (existing) return existing.bringToFront();
 
   const { DialogV2 } = foundry.applications.api;
-  const gold = value => `${formatNumber.format(value)} зм`;
   let result;
   let saved = false;
   let busy = false;
@@ -142,8 +123,7 @@ function openSpellbook() {
       </header>
       <div class="mjl-book-layout">
         <fieldset class="mjl-book-options" aria-label="Параметры книги">
-          <label>Тир партии<select name="tier">${TIERS.map(([min, max], i) =>
-            `<option value="${i + 1}">${TIER_LABELS[i]} · уровни ${min}–${max}</option>`).join("")}</select></label>
+          <label>Тир партии<select name="tier">${tierOptions()}</select></label>
           <label>Уровень волшебника<select name="level"></select></label>
           <label>Вид книги<select name="kind">${Array.from(BOOK_TYPES, ([key, book]) =>
             `<option value="${key}">${book.label}</option>`).join("")}</select></label>
@@ -208,7 +188,7 @@ function openSpellbook() {
         <p class="mjl-book-copy">Переписать всё: ${gold(book.copyCost)} · ${formatNumber.format(book.copyHours)} ч.</p>
         <div class="mjl-book-entries">${contents}</div>`);
       preview.innerHTML = html;
-      preview.prepend(bookLink(base, "Открыть исходную книгу в компендиуме"));
+      preview.prepend(itemLink(base, "Открыть исходную книгу в компендиуме"));
       for (const link of preview.querySelectorAll("a[data-link]")) link.href = "#";
       result = { base, price, contents, spells: book.spells, selectedTier, wizardLevel };
     } catch (error) {
@@ -235,7 +215,7 @@ function openSpellbook() {
       if (!item) throw new Error("Создание предмета отменено.");
       saved = true;
       const created = form.querySelector(".mjl-book-created");
-      created.replaceChildren(bookLink(item, "Открыть созданную книгу"));
+      created.replaceChildren(itemLink(item, "Открыть созданную книгу"));
       created.hidden = false;
       if (dialog.rendered) dialog.setPosition();
       ui.notifications.info("Книга добавлена во вкладку «Предметы».");

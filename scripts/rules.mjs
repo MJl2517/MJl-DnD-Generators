@@ -1,4 +1,81 @@
+export const LIBRARY = /^(?:ag-)?fifthpendium(?:-|\.)/;
 export const TIERS = [[1, 4], [5, 10], [11, 16], [17, 20]];
+export const TIER_LABELS = ["I", "II", "III", "IV"];
+// PHB 2024, Starting Equipment at Higher Levels; DMG 2024, Random Treasure Hoard (with errata).
+export const TIER_ECONOMY = [
+  { startingGold: 0, hoard: 500 }, { startingGold: 637.5, hoard: 4400 },
+  { startingGold: 6375, hoard: 36000 }, { startingGold: 21375, hoard: 330000 }
+];
+const GEM_VALUES = [10, 50, 100, 500, 1000, 5000];
+// Keep up to three denominations at or below one tenth of a typical hoard per stone.
+export const GEM_TIERS = TIER_ECONOMY.map(({ hoard }) => GEM_VALUES.filter(price => price * 10 <= hoard).slice(-3));
+export const WEAPON_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
+const RARITY_VALUES = [100, 400, 4000, 40000, 200000];
+const RARITY_WEIGHTS = [[54, 37, 9, 0, 0], [30, 51, 17, 2, 0], [11, 23, 36, 23, 7], [0, 0, 20, 44, 36]];
+
+export const raritiesForTier = tier => WEAPON_RARITIES.filter((_, index) => RARITY_WEIGHTS[tier - 1]?.[index]);
+
+export function defaultRarityForTier(tier) {
+  const { startingGold, hoard } = TIER_ECONOMY[tier - 1];
+  const allowed = raritiesForTier(tier);
+  return allowed.findLast(rarity => RARITY_VALUES[WEAPON_RARITIES.indexOf(rarity)] <= (startingGold || hoard)) ?? allowed[0];
+}
+
+export function weaponCategory({ type, rarity, properties }) {
+  if (!["simpleM", "simpleR", "martialM", "martialR"].includes(type.value)) return;
+  if (rarity || properties?.includes("mgc")) {
+    if (type.baseItem && WEAPON_RARITIES.includes(rarity)) return "magic";
+    return;
+  }
+  return type.value.startsWith("simple") ? "simple" : "martial";
+}
+
+export function rollGems(pool, tier, value, count, random = Math.random) {
+  const values = GEM_TIERS[tier - 1];
+  if (!values || (value !== 0 && !values.includes(value)) || !Number.isInteger(count) || count < 1 || count > 100) {
+    throw new Error("Выберите стоимость в пределах тира и укажите от 1 до 100 самоцветов.");
+  }
+  const available = [...Map.groupBy(pool.filter(entry => value ? entry.price === value : values.includes(entry.price)),
+    entry => entry.price).values()];
+  if (!available.length) throw new Error("В подключённых компендиумах нет самоцветов выбранной стоимости.");
+  const stock = new Map();
+  for (let i = 0; i < count; i++) {
+    const band = available[Math.floor(random() * available.length)];
+    const entry = band[Math.floor(random() * band.length)];
+    if (!stock.has(entry.uuid)) stock.set(entry.uuid, { ...entry, quantity: 0 });
+    stock.get(entry.uuid).quantity++;
+  }
+  return [...stock.values()];
+}
+
+export function rollArmory(pool, tier, counts, rarity, labels, random = Math.random) {
+  const allowed = raritiesForTier(tier);
+  const limit = WEAPON_RARITIES.indexOf(rarity);
+  if (!allowed.includes(rarity) || Object.values(counts).some(count => !Number.isInteger(count) || count < 0 || count > 30)) {
+    throw new Error("Укажите от 0 до 30 позиций каждого вида и выберите предел редкости.");
+  }
+  if (!Object.values(counts).some(Boolean)) throw new Error("Добавьте хотя бы одну позицию оружия.");
+  const weights = new Map(allowed.filter(rarity => WEAPON_RARITIES.indexOf(rarity) <= limit).map(rarity =>
+    [rarity, RARITY_WEIGHTS[tier - 1][WEAPON_RARITIES.indexOf(rarity)]]));
+
+  return Object.entries(counts).flatMap(([category, count]) => {
+    const available = pool.filter(entry => entry.category === category &&
+      (category !== "magic" || weights.has(entry.rarity)));
+    if (available.length < count) throw new Error(`${labels[category]}: доступно позиций — ${available.length}, запрошено — ${count}.`);
+    if (category !== "magic") return Array.from({ length: count }, () => ({
+      ...available.splice(Math.floor(random() * available.length), 1)[0], quantity: 1
+    }));
+
+    const groups = Map.groupBy(available, entry => entry.rarity);
+    return Array.from({ length: count }, () => {
+      const remaining = [...weights].filter(([rarity]) => groups.get(rarity)?.length);
+      let roll = random() * remaining.reduce((sum, [, weight]) => sum + weight, 0);
+      const [rarity] = remaining.find(([, weight]) => (roll -= weight) < 0);
+      const group = groups.get(rarity);
+      return { ...group.splice(Math.floor(random() * group.length), 1)[0], quantity: 1 };
+    });
+  });
+}
 
 export function rollSpellbook(pool, tier, wizardLevel, random = Math.random) {
   const range = TIERS[tier - 1];
