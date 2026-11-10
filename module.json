@@ -1,0 +1,16 @@
+{
+  "id": "mjl-dnd-generators",
+  "title": "MJl - DnD Generators",
+  "description": "Генераторы для мастера D&D 5e. Книги заклинаний волшебников из компендиумов Fifthpendium.",
+  "version": "1.0.0",
+  "authors": [{"name": "MJl tools"}],
+  "compatibility": {"minimum": "14.361", "verified": "14.361", "maximum": "14.999"},
+  "relationships": {
+    "systems": [{"id": "dnd5e", "type": "system", "compatibility": {"minimum": "5.3.3"}}]
+  },
+  "url": "https://github.com/MJl2517/MJl-DnD-Generators",
+  "manifest": "https://raw.githubusercontent.com/MJl2517/MJl-DnD-Generators/main/module.json",
+  "download": "https://raw.githubusercontent.com/MJl2517/MJl-DnD-Generators/main/dist/mjl-dnd-generators.zip",
+  "esmodules": ["scripts/main.mjs"],
+  "styles": ["styles/generators.css"]
+}
