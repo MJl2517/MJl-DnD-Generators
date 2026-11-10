@@ -1,6 +1,6 @@
 import { ART_TIERS, defaultRarityForTier, expandWeaponVariants, GEM_TIERS, isTradeGood, raritiesForTier, rollArmory,
   rollStock, TIER_ECONOMY, TIER_LABELS, WEAPON_BONUS_PROFILES, weaponCategory } from "./rules.mjs";
-import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
+import { gold, itemCard, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
 const WEAPONS = { simple: "Простое оружие", martial: "Воинское оружие", magic: "Магическое оружие" };
@@ -55,7 +55,9 @@ async function readStock(kind, includeCustom) {
 async function resolveStockItem(row) {
   const base = await fromUuid(row.uuid);
   if (!base) throw new Error("Предмет не найден в компендиуме. Повторите генерацию.");
-  if (!row.modifierUuid) return { link: base, item: base };
+  const data = game.items.fromCompendium(base, { clearFolder: true });
+  data.system.quantity = row.quantity;
+  if (!row.modifierUuid) return { item: base, data };
 
   const template = await fromUuid(row.modifierUuid);
   const activity = template?.system.activities.getByType("enchant")[0];
@@ -65,7 +67,6 @@ async function resolveStockItem(row) {
     throw new Error(`Не удалось применить модификатор «${template?.name ?? row.modifierUuid}» к оружию «${base.name}».`);
   }
 
-  const data = game.items.fromCompendium(base, { clearFolder: true });
   // Fifthpendium cleans bracketed aliases on creation using the already-enchanted name.
   data.name = data.name.replace(/\s*\[[^\]]*\]/g, "").trim();
   data.system.source = template.toObject().system.source;
@@ -82,7 +83,7 @@ async function resolveStockItem(row) {
   }
   data.effects.push(effect);
   const item = new CONFIG.Item.documentClass(data);
-  return { link: template, item, data };
+  return { item, data };
 }
 
 const numberField = (name, label, min, max, value) =>
@@ -220,28 +221,23 @@ function openStock({ kind, title, subtitle, icon, fields, setTier, roll }) {
     const list = preview.querySelector(".mjl-stock-list");
     rows.forEach((row, index) => {
       const details = kind !== "armory" ? `${row.quantity} шт. × ${gold(row.price)}`
-        : [WEAPONS[row.category], row.category === "magic" ? rarityLabel(row.rarity) : null, gold(row.price),
-          row.modifierUuid ? "Шаблон в компендиуме" : null].filter(Boolean).join(" · ");
-      const { link, item } = items[index];
-      list.append(itemLink(link, row.custom ? `${details} · MaJluHa Things` : details, icon, item));
+        : [WEAPONS[row.category], row.category === "magic" ? rarityLabel(row.rarity) : null, gold(row.price)].filter(Boolean).join(" · ");
+      const { item, data } = items[index];
+      const dragData = item.id && item.system.quantity !== row.quantity ? { type: "Item", data } : undefined;
+      list.append(itemCard(item, row.custom ? `${details} · MaJluHa Things` : details, icon, dragData));
     });
-    stock = items.map((entry, index) => ({ ...entry, quantity: rows[index].quantity }));
+    stock = items.map(entry => entry.data);
   }
 
   async function save(_form, preview) {
     if (!stock || saved) return;
-    const data = stock.map(({ item, data, quantity }) => {
-      const copy = data ? foundry.utils.deepClone(data) : game.items.fromCompendium(item, { clearFolder: true });
-      copy.system.quantity = quantity;
-      return copy;
-    });
-    const created = await Item.createDocuments(data);
+    const created = await Item.createDocuments(foundry.utils.deepClone(stock));
     if (!created.length) throw new Error("Создание предметов отменено.");
     saved = true;
     const status = document.createElement("p");
     status.setAttribute("role", "status");
     status.className = "mjl-book-copy";
-    status.textContent = `Создано карточек во вкладке «Предметы»: ${created.length} из ${data.length}.`;
+    status.textContent = `Создано карточек во вкладке «Предметы»: ${created.length} из ${stock.length}.`;
     preview.append(status);
   }
 

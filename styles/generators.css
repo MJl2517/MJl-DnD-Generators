@@ -111,7 +111,7 @@
 
 .mjl-book-status i { color: var(--mjl-accent); font-size: var(--font-size-24); }
 
-.mjl-dnd-generators a.mjl-book-link {
+.mjl-dnd-generators button.mjl-book-card {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -120,17 +120,19 @@
   border: 1px solid var(--mjl-border);
   border-radius: var(--mjl-radius);
   color: var(--mjl-paper);
+  width: 100%;
+  height: auto;
+  text-align: start;
   white-space: normal;
-  text-decoration: none;
 }
 
-.mjl-dnd-generators a.mjl-book-link:hover { background: var(--mjl-hover); border-color: var(--mjl-accent); }
-.mjl-dnd-generators a.mjl-book-link > i { color: var(--mjl-accent); margin-inline-end: 4px; }
+.mjl-dnd-generators button.mjl-book-card:is(:hover, :focus-visible) { background: var(--mjl-hover); border-color: var(--mjl-accent); }
+.mjl-dnd-generators button.mjl-book-card > i { color: var(--mjl-accent); margin-inline-end: 4px; }
 .mjl-book-cover { position: relative; overflow: hidden; }
 .mjl-book-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0; }
-.mjl-book-link-text { flex: 1; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
-.mjl-book-link-text strong { display: block; line-height: 1.25; }
-.mjl-book-link-text small { display: block; margin-top: 3px; }
+.mjl-book-card-text { flex: 1; min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+.mjl-book-card-text strong { display: block; line-height: 1.25; }
+.mjl-book-card-text small { display: block; margin-top: 3px; }
 
 .mjl-book-facts { display: flex; gap: 5px; flex-wrap: wrap; }
 .mjl-book-facts span { padding: 2px 8px; border-radius: 999px; background: var(--mjl-bg); color: var(--mjl-muted); }
@@ -157,7 +159,7 @@
 .mjl-book-circle ul { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 0; }
 .mjl-book-circle li { min-width: 0; margin: 0; }
 
-.mjl-book-circle a.content-link {
+.mjl-book-circle :is(a.content-link, button) {
   display: inline-block;
   padding: 2px 6px;
   border-radius: 5px;
@@ -165,14 +167,14 @@
   overflow-wrap: anywhere;
 }
 
-.mjl-dnd-generators .mjl-book-circle a.content-link {
+.mjl-dnd-generators .mjl-book-circle button {
   background: var(--mjl-bg);
   border-color: var(--mjl-border);
-  text-decoration: none;
+  color: var(--mjl-paper);
+  height: auto;
 }
 
-.mjl-dnd-generators .mjl-book-circle a.content-link i { color: var(--mjl-accent); }
-.mjl-dnd-generators .mjl-book-circle a.content-link:hover { background: var(--mjl-hover); border-color: var(--mjl-accent); text-decoration: underline; }
+.mjl-dnd-generators .mjl-book-circle button:is(:hover, :focus-visible) { background: var(--mjl-hover); border-color: var(--mjl-accent); }
 
 .mjl-dnd-generators .form-footer { flex-shrink: 0; border-top: 1px solid var(--mjl-border); padding-top: 10px; }
 .mjl-dnd-generators .form-footer button {

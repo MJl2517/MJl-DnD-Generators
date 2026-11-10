@@ -2,7 +2,7 @@
   "id": "mjl-dnd-generators",
   "title": "MJl - DnD Generators",
   "description": "Генераторы книг заклинаний, самоцветов, оружия, предметов искусства и товаров. Поддержка Fifthpendium и MaJluHa Things.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "authors": [{"name": "MJl tools"}],
   "compatibility": {"minimum": "14.361", "verified": "14.361", "maximum": "14.999"},
   "relationships": {

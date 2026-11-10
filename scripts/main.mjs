@@ -1,6 +1,6 @@
 import { LIBRARY, rollSpellbook, TIERS, TIER_LABELS } from "./rules.mjs";
 import { openArmory, openArt, openGems, openGoods } from "./stock.mjs";
-import { gold, itemLink, previewStatus, tierOptions } from "./ui.mjs";
+import { gold, itemButton, itemCard, previewStatus, tierOptions } from "./ui.mjs";
 
 const ID = "mjl-dnd-generators";
 const DIALOG_ID = `${ID}-spellbook`;
@@ -97,10 +97,25 @@ async function loadSpellPool(excluded) {
   return pool;
 }
 
-function spellContents(spells) {
+function spellContents(spells, renderSpell) {
   const groups = Map.groupBy(spells.toSorted((a, b) => a.level - b.level || a.name.localeCompare(b.name, "ru")), spell => spell.level);
-  return Array.from(groups, ([level, group]) => `<section class="mjl-book-circle"><h4>Круг ${level}</h4><ul>${group.map(spell =>
-    `<li>@UUID[${spell.uuid}]</li>`).join("")}</ul></section>`).join("");
+  const entries = document.createElement("div");
+  entries.className = "mjl-book-entries";
+  for (const [level, group] of groups) {
+    const circle = document.createElement("section");
+    circle.className = "mjl-book-circle";
+    const heading = document.createElement("h4");
+    heading.textContent = `Круг ${level}`;
+    const list = document.createElement("ul");
+    for (const spell of group) {
+      const li = document.createElement("li");
+      li.append(renderSpell(spell));
+      list.append(li);
+    }
+    circle.append(heading, list);
+    entries.append(circle);
+  }
+  return entries;
 }
 
 function openSpellbook() {
@@ -180,19 +195,22 @@ function openSpellbook() {
       if (!Number.isFinite(value) || !conversion) throw new Error("У исходной книги нет корректной цены.");
       const basePrice = value / conversion;
       const price = basePrice + book.contentsPrice;
-      const contents = spellContents(book.spells);
-      const editor = foundry.applications.ux.TextEditor.implementation;
-      const html = await editor.enrichHTML(`
+      const contents = spellContents(book.spells, spell => `@UUID[${spell.uuid}]`);
+      const data = game.items.fromCompendium(base, { clearFolder: true });
+      data.name = `${base.name} · волшебник ${wizardLevel}-го уровня`;
+      data.system.price = { value: price, denomination: "gp" };
+      data.system.description.value += `<section class="mjl-book-entries"><h3>Записи волшебника ${wizardLevel}-го уровня</h3>${contents.innerHTML}</section>`;
+      data.flags[ID] = { tier: selectedTier, wizardLevel, spells: book.spells.map(spell => spell.uuid) };
+      const item = new CONFIG.Item.documentClass(data);
+      preview.innerHTML = `
         <div class="mjl-book-facts"><span>Тир ${TIER_LABELS[selectedTier - 1]}</span>
           <span>Уровень ${wizardLevel}</span><span>Заклинаний: ${book.spells.length}</span></div>
         <div class="mjl-book-price"><div><span>Цена находки</span><strong>${gold(price)}</strong></div>
           <small>${gold(basePrice)} за книгу + ${gold(book.contentsPrice)} за записи</small></div>
-        <p class="mjl-book-copy">Переписать всё: ${gold(book.copyCost)} · ${formatNumber.format(book.copyHours)} ч.</p>
-        <div class="mjl-book-entries">${contents}</div>`);
-      preview.innerHTML = html;
-      preview.prepend(itemLink(base, "Открыть исходную книгу в компендиуме"));
-      for (const link of preview.querySelectorAll("a[data-link]")) link.href = "#";
-      result = { base, price, contents, spells: book.spells, selectedTier, wizardLevel };
+        <p class="mjl-book-copy">Переписать всё: ${gold(book.copyCost)} · ${formatNumber.format(book.copyHours)} ч.</p>`;
+      preview.prepend(itemCard(item, "Открыть сгенерированную книгу"));
+      preview.append(spellContents(book.spells, spell => itemButton(spell)));
+      result = data;
     } catch (error) {
       preview.innerHTML = previewStatus(error.message, "fa-triangle-exclamation");
       console.error(ID, error);
@@ -204,20 +222,14 @@ function openSpellbook() {
 
   async function save(form) {
     if (!game.user.isGM || !result || saved || busy) return;
-    const { base, price, contents, spells, selectedTier, wizardLevel } = result;
     const settings = form.querySelector(".mjl-book-options");
     settings.disabled = busy = true;
     try {
-      const data = game.items.fromCompendium(base, { clearFolder: true });
-      data.name = `${base.name} · волшебник ${wizardLevel}-го уровня`;
-      data.system.price = { value: price, denomination: "gp" };
-      data.system.description.value += `<section class="mjl-book-entries"><h3>Записи волшебника ${wizardLevel}-го уровня</h3>${contents}</section>`;
-      data.flags[ID] = { tier: selectedTier, wizardLevel, spells: spells.map(spell => spell.uuid) };
-      const item = await Item.create(data);
+      const item = await Item.create(foundry.utils.deepClone(result));
       if (!item) throw new Error("Создание предмета отменено.");
       saved = true;
       const created = form.querySelector(".mjl-book-created");
-      created.replaceChildren(itemLink(item, "Открыть созданную книгу"));
+      created.replaceChildren(itemCard(item, "Открыть созданную книгу"));
       created.hidden = false;
       if (dialog.rendered) dialog.setPosition();
       ui.notifications.info("Книга добавлена во вкладку «Предметы».");
